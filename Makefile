@@ -1,32 +1,20 @@
-GCC = gcc
-CFLAGS = -Wall -Wshadow -pthread
-OBJS = bmp.o filter.o
+CC = gcc
+CFLAGS = -Wall -Wshadow
+TARGET = ex5
 
-all: publisher blur sharpen
+all: $(TARGET)
 
-publisher: publisher.o $(OBJS)
-	$(GCC) $(CFLAGS) publisher.o $(OBJS) -o publisher
+$(TARGET): ex5.o bmp.o filter.o
+	$(CC) $(CFLAGS) -o $(TARGET) ex5.o bmp.o filter.o
 
-blur: blur.o $(OBJS)
-	$(GCC) $(CFLAGS) blur.o $(OBJS) -o blur
+ex5.o: ex5.c bmp.h
+	$(CC) $(CFLAGS) -c ex5.c
 
-sharpen: sharpen.o $(OBJS)
-	$(GCC) $(CFLAGS) sharpen.o $(OBJS) -o sharpen
+bmp.o: bmp.c bmp.h
+	$(CC) $(CFLAGS) -c bmp.c
 
-.c.o: 
-	$(GCC) $(CFLAGS) -c $< -o $@
+filter.o: filter.c filter.h bmp.h
+	$(CC) $(CFLAGS) -c filter.c
 
 clean:
-	rm -f *.o publisher blur sharpen
-
-test: all
-	# Aquí puedes agregar pruebas específicas para cada programa
-	# Por ejemplo:
-	# ./publisher testcases/test.bmp
-	# ./blur
-	# ./sharpen outputs/test_out.bmp
-
-testmem: all
-	valgrind --tool=memcheck --leak-check=summary ./publisher testcases/test.bmp
-	valgrind --tool=memcheck --leak-check=summary ./blur
-	valgrind --tool=memcheck --leak-check=summary ./sharpen outputs/test_out.bmp
+	rm -f $(TARGET) *.o

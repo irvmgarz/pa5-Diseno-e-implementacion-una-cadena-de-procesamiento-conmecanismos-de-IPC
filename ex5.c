@@ -7,7 +7,6 @@ int main(int argc, char **argv) {
     FILE* source;
     FILE* dest;
     BMP_Image* image = NULL;
-    BMP_Image* blurredImage = NULL;
 
     if (argc != 3) {
         printError(ARGUMENT_ERROR);
@@ -34,21 +33,14 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    blurredImage = createBMPImageFromTemplate(image);
-    if (blurredImage == NULL) {
-        printError(MEMORY_ERROR);
-        freeImage(image);
-        fclose(source);
-        fclose(dest);
-        exit(EXIT_FAILURE);
-    }
+    // Llamada a applyBlur para desenfocar solo la mitad superior de la imagen
+    applyBlur(image);
 
-    apply(image, blurredImage);
+    // Escribir la imagen desenfocada a la salida
+    writeImage(argv[2], image);
 
-    writeImage(argv[2], blurredImage);
-
+    // Limpiar y cerrar archivos
     freeImage(image);
-    freeImage(blurredImage);
     fclose(source);
     fclose(dest);
 

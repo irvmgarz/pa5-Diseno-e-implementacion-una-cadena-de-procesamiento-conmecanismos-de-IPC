@@ -20,8 +20,7 @@ void apply(BMP_Image * imageIn, BMP_Image * imageOut) {
         {1, 1, 1},
         {1, 1, 1}
     };
-    
-    int filterSize = 3;
+
     int sum = 9;
 
     for (int y = 0; y < height; y++) {

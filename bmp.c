@@ -2,10 +2,63 @@
 #include <stdio.h>
 #include "bmp.h"
 
+void applyBlur(BMP_Image* image) {
+    int width = image->header.width_px;
+    int height = image->norm_height;
+    int halfHeight = height / 2;
+
+    // Definir el radio del desenfoque
+    int blurRadius = 1;
+
+    // Crear una copia de la imagen para aplicar el desenfoque
+    BMP_Image* blurredImage = createBMPImageFromTemplate(image);
+    if (blurredImage == NULL) {
+        return;
+    }
+
+    // Aplicar el desenfoque solo en la mitad superior
+    for (int i = 0; i < halfHeight; i++) {  // Solo procesar filas en la mitad superior
+        for (int j = 0; j < width; j++) {
+            int sumBlue = 0, sumGreen = 0, sumRed = 0;
+            int count = 0;
+
+            // Promediar los píxeles dentro del radio de desenfoque
+            for (int di = -blurRadius; di <= blurRadius; di++) {
+                for (int dj = -blurRadius; dj <= blurRadius; dj++) {
+                    int ni = i + di;
+                    int nj = j + dj;
+                    if (ni >= 0 && ni < halfHeight && nj >= 0 && nj < width) {  // Limitar a la mitad superior
+                        sumBlue += image->pixels[ni][nj].blue;
+                        sumGreen += image->pixels[ni][nj].green;
+                        sumRed += image->pixels[ni][nj].red;
+                        count++;
+                    }
+                }
+            }
+
+            // Asignar los valores promediados al píxel actual en la imagen desenfocada
+            blurredImage->pixels[i][j].blue = sumBlue / count;
+            blurredImage->pixels[i][j].green = sumGreen / count;
+            blurredImage->pixels[i][j].red = sumRed / count;
+        }
+    }
+
+    // Solo copiar la mitad superior desenfocada de vuelta a la imagen original
+    for (int i = 0; i < halfHeight; i++) {
+        for (int j = 0; j < width; j++) {
+            image->pixels[i][j] = blurredImage->pixels[i][j];
+        }
+    }
+
+    // Liberar la memoria de la imagen desenfocada
+    freeImage(blurredImage);
+}
+
+
 void printError(int error) {
     switch(error) {
     case ARGUMENT_ERROR:
-        printf("Usage:ex5 <source> <destination>\n");
+        printf("Usage: ex5 <source> <destination>\n");
         break;
     case FILE_ERROR:
         printf("Unable to open file!\n");
@@ -22,7 +75,6 @@ void printError(int error) {
 }
 
 BMP_Image* createBMPImage(FILE* fptr) {
-    printf("Creando imagen BMP...\n");
     BMP_Image* image = (BMP_Image*)malloc(sizeof(BMP_Image));
     if (image == NULL) {
         printError(MEMORY_ERROR);
@@ -30,11 +82,9 @@ BMP_Image* createBMPImage(FILE* fptr) {
     }
 
     fread(&(image->header), sizeof(BMP_Header), 1, fptr);
-    printf("Header leido satisfactoriamente.\n");
 
     image->norm_height = abs(image->header.height_px);
     image->bytes_per_pixel = image->header.bits_per_pixel / 8;
-    int dataSize = image->header.width_px * image->norm_height * image->bytes_per_pixel;
 
     image->pixels = (Pixel**)malloc(image->norm_height * sizeof(Pixel*));
     if (image->pixels == NULL) {
@@ -56,11 +106,10 @@ BMP_Image* createBMPImage(FILE* fptr) {
         }
     }
 
-    printf("Imagen BMP creada satisfactoriamente.\n");
     return image;
 }
 
-BMP_Image* createBMPImageFromTemplate(const BMP_Image* template) {
+BMP_Image* createBMPImageFromTemplate(const BMP_Image* template) {  // Usar const aquí
     BMP_Image* image = (BMP_Image*)malloc(sizeof(BMP_Image));
     if (image == NULL) {
         printError(MEMORY_ERROR);
@@ -95,12 +144,10 @@ BMP_Image* createBMPImageFromTemplate(const BMP_Image* template) {
 }
 
 void readImageData(FILE* srcFile, BMP_Image* image, int dataSize) {
-    printf("Leyendo datos de la imagen...\n");
     fseek(srcFile, image->header.offset, SEEK_SET);
     for (int i = 0; i < image->norm_height; i++) {
         fread(image->pixels[i], image->bytes_per_pixel, image->header.width_px, srcFile);
     }
-    printf("Datos de la imagen leidos satisfactoriamente.\n");
 }
 
 void readImage(FILE *srcFile, BMP_Image **dataImage) {
@@ -108,10 +155,10 @@ void readImage(FILE *srcFile, BMP_Image **dataImage) {
     if (*dataImage == NULL) {
         return;
     }
-    readImageData(srcFile, *dataImage, (*dataImage)->header.imagesize);
+    readImageData(srcFile, *dataImage, (*dataImage)->header.image_size);  // Cambio a image_size
 }
 
-void writeImage(char* destFileName, BMP_Image* dataImage) {
+void writeImage(const char* destFileName, BMP_Image* dataImage) {  // Usar const aquí
     FILE* destFile = fopen(destFileName, "wb");
     if (destFile == NULL) {
         printError(FILE_ERROR);
@@ -135,35 +182,12 @@ void freeImage(BMP_Image* image) {
     free(image);
 }
 
-int checkBMPValid(BMP_Header* header) {
-    if (header->type != 0x4d42) {
-        return FALSE;
+int checkBMPValid(const BMP_Header* header) {  // Usar const aquí
+    if (header->type != 0x4D42) {
+        return 0;
     }
     if (header->bits_per_pixel != 24 && header->bits_per_pixel != 32) {
-        return FALSE;
+        return 0;
     }
-    if (header->planes != 1) {
-        return FALSE;
-    }
-    if (header->compression != 0) {
-        return FALSE;
-    }
-    return TRUE;
-}
-
-void printBMPHeader(BMP_Header* header) {
-    printf("file type (should be 0x4d42): %x\n", header->type);
-    printf("file size: %d\n", header->size);
-    printf("offset to image data: %d\n", header->offset);
-    printf("header size: %d\n", header->header_size);
-    printf("width_px: %d\n", header->width_px);
-    printf("height_px: %d\n", header->height_px);
-    printf("planes: %d\n", header->planes);
-    printf("bits: %d\n", header->bits_per_pixel);
-}
-
-void printBMPImage(BMP_Image* image) {
-    printf("data size is %ld\n", sizeof(image->pixels));
-    printf("norm_height size is %d\n", image->norm_height);
-    printf("bytes per pixel is %d\n", image->bytes_per_pixel);
+    return 1;
 }
