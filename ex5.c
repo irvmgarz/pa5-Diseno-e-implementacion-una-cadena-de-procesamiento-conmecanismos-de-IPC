@@ -6,6 +6,22 @@
 #include "bmp.h"
 #include "filter.h"
 
+void makeBottomTransparent(BMP_Image* image) {
+    int width = image->header.width_px;
+    int height = image->norm_height;
+    int halfHeight = height / 2;
+
+    // Hacer la mitad inferior de la imagen transparente
+    for (int i = halfHeight; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            image->pixels[i][j].alpha = 0;  // Establecer transparencia total
+            image->pixels[i][j].blue = 0;   // Eliminar los canales de color
+            image->pixels[i][j].green = 0;
+            image->pixels[i][j].red = 0;
+        }
+    }
+}
+
 int main(int argc, char **argv) {
     const char* original_shared_memory_name = "bmp_shared_memory";
     const char* blurred_shared_memory_name = "bmp_blurred_memory";
@@ -73,6 +89,9 @@ int main(int argc, char **argv) {
             blurred_image.pixels[i][j] = original_image.pixels[i][j];
         }
     }
+
+    // Hacer transparente la parte inferior de la imagen
+    makeBottomTransparent(&blurred_image);
 
     // Aplicar el filtro de desenfoque a la imagen copiada en la nueva memoria compartida
     applyBlur(&blurred_image);

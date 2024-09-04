@@ -60,6 +60,22 @@ void applyEdgeDetection(BMP_Image* image) {
     freeImage(edgeImage);
 }
 
+void makeTopTransparent(BMP_Image* image) {
+    int width = image->header.width_px;
+    int height = image->norm_height;
+    int halfHeight = height / 2;
+
+    // Hacer la mitad superior de la imagen transparente
+    for (int i = 0; i < halfHeight; i++) {
+        for (int j = 0; j < width; j++) {
+            image->pixels[i][j].alpha = 0; // Establecer transparencia total
+            image->pixels[i][j].blue = 0;  // Eliminar los canales de color
+            image->pixels[i][j].green = 0;
+            image->pixels[i][j].red = 0;
+        }
+    }
+}
+
 int main() {
     const char* original_shared_memory_name = "bmp_shared_memory";
     const char* sharpened_shared_memory_name = "bmp_sharpened_memory";
@@ -127,6 +143,9 @@ int main() {
             sharpened_image.pixels[i][j] = original_image.pixels[i][j];
         }
     }
+
+    // Hacer la parte superior transparente
+    makeTopTransparent(&sharpened_image);
 
     // Aplicar el filtro de realzado de bordes en la parte inferior de la imagen copiada
     applyEdgeDetection(&sharpened_image);
