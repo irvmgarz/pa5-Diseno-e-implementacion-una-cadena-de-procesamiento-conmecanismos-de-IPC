@@ -61,46 +61,86 @@ void applyEdgeDetection(BMP_Image* image) {
 }
 
 int main() {
-    const char* shared_memory_name = "bmp_shared_memory";
+    const char* original_shared_memory_name = "bmp_shared_memory";
+    const char* sharpened_shared_memory_name = "bmp_sharpened_memory";
     const int shared_memory_size = sizeof(BMP_Header) + 1920 * 1080 * 4; // Ajusta según el tamaño de la imagen
 
-    int shm_fd = shm_open(shared_memory_name, O_RDWR, 0666);
-    if (shm_fd == -1) {
-        perror("Error al abrir la memoria compartida");
+    // Abrir la memoria compartida original (creada por publisher)
+    int shm_fd_original = shm_open(original_shared_memory_name, O_RDONLY, 0666);
+    if (shm_fd_original == -1) {
+        perror("Error al abrir la memoria compartida original");
         exit(EXIT_FAILURE);
     }
 
-    void* shared_memory = mmap(0, shared_memory_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if (shared_memory == MAP_FAILED) {
-        perror("Error al mapear la memoria compartida");
+    // Crear nuevo bloque de memoria compartida para la imagen realzada
+    int shm_fd_sharpened = shm_open(sharpened_shared_memory_name, O_CREAT | O_RDWR, 0666);
+    if (shm_fd_sharpened == -1) {
+        perror("Error al crear la memoria compartida para realzado");
         exit(EXIT_FAILURE);
     }
 
-    // Acceder a la cabecera y los datos de la imagen desde la memoria compartida
-    BMP_Image image;
-    image.header = *(BMP_Header*)shared_memory;
-    image.norm_height = abs(image.header.height_px);
-    image.bytes_per_pixel = image.header.bits_per_pixel / 8;
+    // Ajustar el tamaño del nuevo bloque de memoria
+    ftruncate(shm_fd_sharpened, shared_memory_size);
 
-    // Configurar los píxeles de la imagen para que apunten a la memoria compartida
-    image.pixels = (Pixel**)(malloc(image.norm_height * sizeof(Pixel*)));
-    uint8_t* pixelArray = (uint8_t*)shared_memory + sizeof(BMP_Header);
-    for (int i = 0; i < image.norm_height; i++) {
-        image.pixels[i] = (Pixel*)(pixelArray + i * image.header.width_px * image.bytes_per_pixel);
+    // Mapear la memoria original y la nueva memoria para el realzado
+    void* shared_memory_original = mmap(0, shared_memory_size, PROT_READ, MAP_SHARED, shm_fd_original, 0);
+    if (shared_memory_original == MAP_FAILED) {
+        perror("Error al mapear la memoria original");
+        exit(EXIT_FAILURE);
     }
 
-    // Aplicar el filtro de realzado de bordes en la mitad inferior
-    applyEdgeDetection(&image);
+    void* shared_memory_sharpened = mmap(0, shared_memory_size, PROT_WRITE, MAP_SHARED, shm_fd_sharpened, 0);
+    if (shared_memory_sharpened == MAP_FAILED) {
+        perror("Error al mapear la memoria para realzado");
+        exit(EXIT_FAILURE);
+    }
 
-    // Guardar la imagen realzada en "outputs/resultado.bmp"
+    // Acceder a la cabecera y los datos de la imagen desde la memoria original
+    BMP_Image original_image;
+    original_image.header = *(BMP_Header*)shared_memory_original;
+    original_image.norm_height = abs(original_image.header.height_px);
+    original_image.bytes_per_pixel = original_image.header.bits_per_pixel / 8;
+
+    // Configurar los píxeles de la imagen original
+    original_image.pixels = (Pixel**)(malloc(original_image.norm_height * sizeof(Pixel*)));
+    uint8_t* original_pixelArray = (uint8_t*)shared_memory_original + sizeof(BMP_Header);
+    for (int i = 0; i < original_image.norm_height; i++) {
+        original_image.pixels[i] = (Pixel*)(original_pixelArray + i * original_image.header.width_px * original_image.bytes_per_pixel);
+    }
+
+    // Crear una imagen nueva para la imagen realzada en la nueva memoria compartida
+    BMP_Image sharpened_image;
+    sharpened_image.header = original_image.header;
+    sharpened_image.norm_height = original_image.norm_height;
+    sharpened_image.bytes_per_pixel = original_image.bytes_per_pixel;
+
+    // Configurar los píxeles de la nueva imagen realzada en la nueva memoria compartida
+    sharpened_image.pixels = (Pixel**)(malloc(sharpened_image.norm_height * sizeof(Pixel*)));
+    uint8_t* sharpened_pixelArray = (uint8_t*)shared_memory_sharpened + sizeof(BMP_Header);
+    for (int i = 0; i < sharpened_image.norm_height; i++) {
+        sharpened_image.pixels[i] = (Pixel*)(sharpened_pixelArray + i * sharpened_image.header.width_px * sharpened_image.bytes_per_pixel);
+    }
+
+    // Copiar la imagen original a la nueva imagen (antes de aplicar el realzado)
+    for (int i = 0; i < sharpened_image.norm_height; i++) {
+        for (int j = 0; j < sharpened_image.header.width_px; j++) {
+            sharpened_image.pixels[i][j] = original_image.pixels[i][j];
+        }
+    }
+
+    // Aplicar el filtro de realzado de bordes en la parte inferior de la imagen copiada
+    applyEdgeDetection(&sharpened_image);
+
+    // Guardar la imagen realzada si se especifica un archivo de salida (opcional)
     if (access("outputs", F_OK) == -1) {
         // Crear directorio 'outputs' si no existe
         mkdir("outputs", 0755);
     }
-    writeImage("outputs/resultado.bmp", &image);
+    writeImage("outputs/sharpened_result.bmp", &sharpened_image);
 
     // Liberar la memoria utilizada para los punteros de píxeles
-    free(image.pixels);
+    free(original_image.pixels);
+    free(sharpened_image.pixels);
 
     return 0;
 }

@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wshadow
 
-all: ex5 sharpen publisher
+all: ex5 sharpen publisher combine
 
 ex5: ex5.o bmp.o filter.o
 	$(CC) $(CFLAGS) -o ex5 ex5.o bmp.o filter.o
@@ -11,6 +11,9 @@ sharpen: sharpen.o bmp.o
 
 publisher: publisher.o
 	$(CC) $(CFLAGS) -lrt -o publisher publisher.o
+
+combine: combine.o bmp.o
+	$(CC) $(CFLAGS) -o combine combine.o bmp.o
 
 ex5.o: ex5.c bmp.h filter.h
 	$(CC) $(CFLAGS) -c ex5.c
@@ -27,5 +30,8 @@ filter.o: filter.c filter.h bmp.h
 publisher.o: publisher.c
 	$(CC) $(CFLAGS) -c publisher.c
 
+combine.o: combine.c bmp.h
+	$(CC) $(CFLAGS) -c combine.c
+
 clean:
-	rm -f ex5 sharpen publisher *.o
+	rm -f ex5 sharpen publisher combine *.o
