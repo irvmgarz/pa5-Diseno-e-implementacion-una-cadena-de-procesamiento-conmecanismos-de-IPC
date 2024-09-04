@@ -1,17 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "bmp.h"
 
 void applyEdgeDetection(BMP_Image* image) {
     int width = image->header.width_px;
     int height = image->norm_height;
     int halfHeight = height / 2;
-
-    // Crear una copia de la imagen para aplicar el filtro de bordes
-    BMP_Image* edgeImage = createBMPImageFromTemplate(image);
-    if (edgeImage == NULL) {
-        return;
-    }
 
     // Definir el kernel de realzado de bordes
     int edgeKernel[3][3] = {
@@ -38,64 +35,55 @@ void applyEdgeDetection(BMP_Image* image) {
                 }
             }
 
-            // Asignar los valores calculados al píxel correspondiente
-            edgeImage->pixels[i][j].blue = (sumBlue < 0) ? 0 : (sumBlue > 255) ? 255 : sumBlue;
-            edgeImage->pixels[i][j].green = (sumGreen < 0) ? 0 : (sumGreen > 255) ? 255 : sumGreen;
-            edgeImage->pixels[i][j].red = (sumRed < 0) ? 0 : (sumRed > 255) ? 255 : sumRed;
+            // Limitar los valores a 0-255 para evitar distorsión de color
+            image->pixels[i][j].blue = (sumBlue < 0) ? 0 : (sumBlue > 255) ? 255 : sumBlue;
+            image->pixels[i][j].green = (sumGreen < 0) ? 0 : (sumGreen > 255) ? 255 : sumGreen;
+            image->pixels[i][j].red = (sumRed < 0) ? 0 : (sumRed > 255) ? 255 : sumRed;
         }
     }
-
-    // Copiar la mitad inferior con bordes realzados de vuelta a la imagen original
-    for (int i = halfHeight; i < height; i++) {
-        for (int j = 0; j < width; j++) {
-            image->pixels[i][j] = edgeImage->pixels[i][j];
-        }
-    }
-
-    // Liberar la memoria de la imagen procesada
-    freeImage(edgeImage);
 }
 
-int main(int argc, char **argv) {
-    FILE* source;
-    FILE* dest;
-    BMP_Image* image = NULL;
+int main() {
+    const char* shared_memory_name = "bmp_shared_memory";
+    const int shared_memory_size = sizeof(BMP_Header) + 1920 * 1080 * 4; // Ajusta según el tamaño de la imagen
 
-    if (argc != 3) {
-        printError(ARGUMENT_ERROR);
-        exit(EXIT_FAILURE);
-    }
-    
-    if ((source = fopen(argv[1], "rb")) == NULL) {
-        printError(FILE_ERROR);
-        exit(EXIT_FAILURE);
-    }
-    if ((dest = fopen(argv[2], "wb")) == NULL) {
-        printError(FILE_ERROR);
-        fclose(source);
-        exit(EXIT_FAILURE);
-    } 
-
-    readImage(source, &image);
-
-    if (!checkBMPValid(&image->header)) {
-        printError(VALID_ERROR);
-        freeImage(image);
-        fclose(source);
-        fclose(dest);
+    // Abrir memoria compartida
+    int shm_fd = shm_open(shared_memory_name, O_RDWR, 0666);
+    if (shm_fd == -1) {
+        perror("Error al abrir la memoria compartida");
         exit(EXIT_FAILURE);
     }
 
-    // Aplicar el filtro de realzado de bordes en la mitad inferior de la imagen
-    applyEdgeDetection(image);
+    void* shared_memory = mmap(0, shared_memory_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (shared_memory == MAP_FAILED) {
+        perror("Error al mapear la memoria compartida");
+        exit(EXIT_FAILURE);
+    }
 
-    // Escribir la imagen procesada a la salida
-    writeImage(argv[2], image);
+    // Acceder a la cabecera y a los datos de la imagen desde la memoria compartida
+    BMP_Image image;
+    image.header = *(BMP_Header*)shared_memory;
+    image.norm_height = abs(image.header.height_px);
+    image.bytes_per_pixel = image.header.bits_per_pixel / 8;
 
-    // Limpiar y cerrar archivos
-    freeImage(image);
-    fclose(source);
-    fclose(dest);
+    // Configurar los píxeles de la imagen para que apunten a la memoria compartida
+    image.pixels = (Pixel**)(malloc(image.norm_height * sizeof(Pixel*)));
+    uint8_t* pixelArray = (uint8_t*)shared_memory + sizeof(BMP_Header);
+    for (int i = 0; i < image.norm_height; i++) {
+        image.pixels[i] = (Pixel*)(pixelArray + i * image.header.width_px * image.bytes_per_pixel);
+    }
 
-    exit(EXIT_SUCCESS);
+    // Aplicar el filtro de realzado a la imagen cargada en memoria compartida
+    applyEdgeDetection(&image);
+
+    // Guardar la imagen procesada en la carpeta "outputs" como resultado.bmp
+    char outputFilePath[256] = "outputs/resultado.bmp";
+    writeImage(outputFilePath, &image);
+
+    // Liberar la memoria utilizada para los punteros de píxeles
+    free(image.pixels);
+
+    printf("Imagen realzada guardada en %s\n", outputFilePath);
+
+    return 0;
 }
