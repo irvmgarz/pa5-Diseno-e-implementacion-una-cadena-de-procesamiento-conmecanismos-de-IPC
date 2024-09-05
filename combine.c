@@ -7,18 +7,18 @@
 #include "bmp.h"
 
 int main() {
-    const char* blurred_shared_memory_name = "bmp_blurred_memory";
-    const char* sharpened_shared_memory_name = "bmp_sharpened_memory";
+    const char* blurred_shared_memory_name = "processed_bmp_blurred_memory";
+    const char* sharpened_shared_memory_name = "processed_bmp_sharped_memory";
     const int shared_memory_size = sizeof(BMP_Header) + 1920 * 1080 * 4; // Ajusta según el tamaño de la imagen
 
-    // Abrir la memoria compartida de la imagen desenfocada (ex5)
+    // Abrir la memoria compartida de la imagen desenfocada
     int shm_fd_blurred = shm_open(blurred_shared_memory_name, O_RDONLY, 0666);
     if (shm_fd_blurred == -1) {
         perror("Error al abrir la memoria compartida desenfocada");
         exit(EXIT_FAILURE);
     }
 
-    // Abrir la memoria compartida de la imagen realzada (sharpen)
+    // Abrir la memoria compartida de la imagen realzada
     int shm_fd_sharpened = shm_open(sharpened_shared_memory_name, O_RDONLY, 0666);
     if (shm_fd_sharpened == -1) {
         perror("Error al abrir la memoria compartida realzada");
@@ -94,6 +94,10 @@ int main() {
     // Desmapear las memorias compartidas
     munmap(shared_memory_blurred, shared_memory_size);
     munmap(shared_memory_sharpened, shared_memory_size);
+
+    // Cerrar los descriptores de memoria compartida
+    close(shm_fd_blurred);
+    close(shm_fd_sharpened);
 
     return 0;
 }
