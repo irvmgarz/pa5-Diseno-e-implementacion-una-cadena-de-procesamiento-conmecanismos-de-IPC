@@ -1,33 +1,37 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <pthread.h>
 #include "bmp.h"
 
-void applyBlur(BMP_Image* image) {
+// Estructura para pasar argumentos a cada hilo
+typedef struct {
+    BMP_Image* image;
+    int start_row;
+    int end_row;
+    int blur_radius;
+} ThreadArgs;
+
+// Función que será ejecutada por cada hilo
+void* applyBlurThread(void* args) {
+    ThreadArgs* threadArgs = (ThreadArgs*)args;
+    BMP_Image* image = threadArgs->image;
+    int start_row = threadArgs->start_row;
+    int end_row = threadArgs->end_row;
+    int blurRadius = threadArgs->blur_radius;
+
     int width = image->header.width_px;
-    int height = image->norm_height;
-    int halfHeight = height / 2;
 
-    // Definir el radio del desenfoque
-    int blurRadius = 1;
-
-    // Crear una copia de la imagen para aplicar el desenfoque
-    BMP_Image* blurredImage = createBMPImageFromTemplate(image);
-    if (blurredImage == NULL) {
-        return;
-    }
-
-    // Aplicar el desenfoque solo en la mitad superior
-    for (int i = 0; i < halfHeight; i++) {  // Solo procesar filas en la mitad superior
+    for (int i = start_row; i < end_row; i++) {
         for (int j = 0; j < width; j++) {
             int sumBlue = 0, sumGreen = 0, sumRed = 0;
             int count = 0;
 
-            // Promediar los píxeles dentro del radio de desenfoque
+            // Aplicar el desenfoque promediando los píxeles dentro del radio
             for (int di = -blurRadius; di <= blurRadius; di++) {
                 for (int dj = -blurRadius; dj <= blurRadius; dj++) {
                     int ni = i + di;
                     int nj = j + dj;
-                    if (ni >= 0 && ni < halfHeight && nj >= 0 && nj < width) {  // Limitar a la mitad superior
+                    if (ni >= 0 && ni < end_row && nj >= 0 && nj < width) {
                         sumBlue += image->pixels[ni][nj].blue;
                         sumGreen += image->pixels[ni][nj].green;
                         sumRed += image->pixels[ni][nj].red;
@@ -36,25 +40,43 @@ void applyBlur(BMP_Image* image) {
                 }
             }
 
-            // Asignar los valores promediados al píxel actual en la imagen desenfocada
-            blurredImage->pixels[i][j].blue = sumBlue / count;
-            blurredImage->pixels[i][j].green = sumGreen / count;
-            blurredImage->pixels[i][j].red = sumRed / count;
+            // Asignar los valores promediados al píxel actual
+            image->pixels[i][j].blue = sumBlue / count;
+            image->pixels[i][j].green = sumGreen / count;
+            image->pixels[i][j].red = sumRed / count;
         }
     }
 
-    // Solo copiar la mitad superior desenfocada de vuelta a la imagen original
-    for (int i = 0; i < halfHeight; i++) {
-        for (int j = 0; j < width; j++) {
-            image->pixels[i][j] = blurredImage->pixels[i][j];
-        }
-    }
-
-    // Liberar la memoria de la imagen desenfocada
-    freeImage(blurredImage);
+    return NULL;
 }
 
+// Función para aplicar desenfoque utilizando múltiples hilos
+void applyBlurMultiThreaded(BMP_Image* image, int num_threads) {
+    int height = image->norm_height / 2;  // Limitar a la mitad superior
+    int rows_per_thread = height / num_threads;
+    pthread_t threads[num_threads];
+    ThreadArgs args[num_threads];
 
+    // Crear hilos para aplicar el desenfoque en paralelo
+    for (int i = 0; i < num_threads; i++) {
+        int start_row = i * rows_per_thread;
+        int end_row = (i == num_threads - 1) ? height : (i + 1) * rows_per_thread;  // El último hilo toma el resto
+
+        args[i].image = image;
+        args[i].start_row = start_row;
+        args[i].end_row = end_row;
+        args[i].blur_radius = 1;  // Puedes ajustar el radio del desenfoque si lo deseas
+
+        pthread_create(&threads[i], NULL, applyBlurThread, &args[i]);
+    }
+
+    // Esperar a que todos los hilos terminen
+    for (int i = 0; i < num_threads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+}
+
+// Función para imprimir errores
 void printError(int error) {
     switch(error) {
     case ARGUMENT_ERROR:
@@ -74,6 +96,7 @@ void printError(int error) {
     }
 }
 
+// Crear una imagen BMP a partir de un archivo
 BMP_Image* createBMPImage(FILE* fptr) {
     BMP_Image* image = (BMP_Image*)malloc(sizeof(BMP_Image));
     if (image == NULL) {
@@ -109,7 +132,8 @@ BMP_Image* createBMPImage(FILE* fptr) {
     return image;
 }
 
-BMP_Image* createBMPImageFromTemplate(const BMP_Image* template) {  // Usar const aquí
+// Crear una imagen BMP a partir de otra como plantilla
+BMP_Image* createBMPImageFromTemplate(const BMP_Image* template) {
     BMP_Image* image = (BMP_Image*)malloc(sizeof(BMP_Image));
     if (image == NULL) {
         printError(MEMORY_ERROR);
@@ -143,6 +167,7 @@ BMP_Image* createBMPImageFromTemplate(const BMP_Image* template) {  // Usar cons
     return image;
 }
 
+// Leer los datos de la imagen BMP desde un archivo
 void readImageData(FILE* srcFile, BMP_Image* image, int dataSize) {
     fseek(srcFile, image->header.offset, SEEK_SET);
     for (int i = 0; i < image->norm_height; i++) {
@@ -150,15 +175,17 @@ void readImageData(FILE* srcFile, BMP_Image* image, int dataSize) {
     }
 }
 
+// Leer una imagen BMP desde un archivo
 void readImage(FILE *srcFile, BMP_Image **dataImage) {
     *dataImage = createBMPImage(srcFile);
     if (*dataImage == NULL) {
         return;
     }
-    readImageData(srcFile, *dataImage, (*dataImage)->header.image_size);  // Cambio a image_size
+    readImageData(srcFile, *dataImage, (*dataImage)->header.image_size);
 }
 
-void writeImage(const char* destFileName, BMP_Image* dataImage) {  // Usar const aquí
+// Escribir una imagen BMP a un archivo
+void writeImage(const char* destFileName, BMP_Image* dataImage) {
     FILE* destFile = fopen(destFileName, "wb");
     if (destFile == NULL) {
         printError(FILE_ERROR);
@@ -174,6 +201,7 @@ void writeImage(const char* destFileName, BMP_Image* dataImage) {  // Usar const
     fclose(destFile);
 }
 
+// Liberar la memoria ocupada por una imagen BMP
 void freeImage(BMP_Image* image) {
     for (int i = 0; i < image->norm_height; i++) {
         free(image->pixels[i]);
@@ -182,7 +210,8 @@ void freeImage(BMP_Image* image) {
     free(image);
 }
 
-int checkBMPValid(const BMP_Header* header) {  // Usar const aquí
+// Verificar si el archivo BMP es válido
+int checkBMPValid(const BMP_Header* header) {
     if (header->type != 0x4D42) {
         return 0;
     }

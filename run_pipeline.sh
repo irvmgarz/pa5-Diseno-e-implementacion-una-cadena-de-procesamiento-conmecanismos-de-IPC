@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Ejecutar ./ex5 en segundo plano
-./ex5 &
+./ex5 4 &
 pid_ex5=$!
 
 # Ejecutar ./sharpen en segundo plano

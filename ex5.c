@@ -4,10 +4,27 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <pthread.h>
 #include "bmp.h"
 #include "filter.h"
 
 int main(int argc, char **argv) {
+    // Verificar si se ha especificado el número de hilos
+    if (argc < 2) {
+        printf("Usage: %s <number_of_threads> [output_image]\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    int num_threads = atoi(argv[1]);  // Obtener el número de hilos del argumento
+
+    if (num_threads <= 0) {
+        printf("El número de hilos debe ser mayor a 0\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Asignar un nombre de archivo predeterminado si no se proporciona
+    const char* output_image = (argc == 3) ? argv[2] : "output.bmp";
+
     const char* shared_memory_name = "bmp_shared_memory";
     const char* new_shared_memory_name = "processed_bmp_blurred_memory";
     const int shared_memory_size = sizeof(BMP_Header) + 1920 * 1080 * 4; // Ajusta según el tamaño de la imagen
@@ -51,17 +68,15 @@ int main(int argc, char **argv) {
     }
     printf("Píxeles configurados correctamente.\n");
 
-    // Aplicar el filtro de desenfoque (Blur)
-    printf("Aplicando filtro de desenfoque...\n");
-    applyBlur(&image);
+    // Aplicar el filtro de desenfoque con múltiples hilos
+    printf("Aplicando filtro de desenfoque con %d hilos...\n", num_threads);
+    applyBlurMultiThreaded(&image, num_threads);
     printf("Filtro de desenfoque aplicado con éxito.\n");
 
     // Guardar la imagen desenfocada de vuelta al archivo si se proporciona un nombre de archivo
-    if (argc == 2) {
-        printf("Guardando la imagen desenfocada en el archivo '%s'...\n", argv[1]);
-        writeImage(argv[1], &image);
-        printf("Imagen guardada en '%s'.\n", argv[1]);
-    }
+    printf("Guardando la imagen desenfocada en el archivo '%s'...\n", output_image);
+    writeImage(output_image, &image);
+    printf("Imagen guardada en '%s'.\n", output_image);
 
     // Crear nueva memoria compartida para la imagen desenfocada
     printf("Creando nueva memoria compartida '%s'...\n", new_shared_memory_name);
@@ -118,7 +133,6 @@ int main(int argc, char **argv) {
     printf("Memorias compartidas cerradas correctamente. Proceso completado.\n");
 
     printf("-----------------------------------------------\n");
-
 
     return 0;
 }
